@@ -23,14 +23,52 @@ class DeviceApps {
   /// To get the icon you have to cast the object to [ApplicationWithIcon]
   /// [onlyAppsWithLaunchIntent] will only list applications when an entrypoint.
   /// It is similar to what a launcher will display
-  static Future<List<Application>> getInstalledApplications({
+  static Future<List<Application>> getMainProfileInstalledApps({
     bool includeSystemApps: false,
     bool includeAppIcons: false,
     bool onlyAppsWithLaunchIntent: false,
   }) async {
     try {
       final Object apps =
-          await _methodChannel.invokeMethod('getInstalledApps', <String, bool>{
+          await _methodChannel.invokeMethod('getMainProfileInstalledApps', <String, bool>{
+        'system_apps': includeSystemApps,
+        'include_app_icons': includeAppIcons,
+        'only_apps_with_launch_intent': onlyAppsWithLaunchIntent
+      });
+
+      if (apps is Iterable) {
+        List<Application> list = <Application>[];
+        for (Object app in apps) {
+          if (app is Map) {
+            try {
+              list.add(Application._(app));
+            } catch (e, trace) {
+              if (e is AssertionError) {
+                print('[DeviceApps] Unable to add the following app: $app');
+              } else {
+                print('[DeviceApps] $e $trace');
+              }
+            }
+          }
+        }
+        return list;
+      } else {
+        return List<Application>.empty();
+      }
+    } catch (err) {
+      print(err);
+      return List<Application>.empty();
+    }
+  }
+
+  static Future<List<Application>> getWorkProfileInstalledApps({
+    bool includeSystemApps: false,
+    bool includeAppIcons: false,
+    bool onlyAppsWithLaunchIntent: false,
+  }) async {
+    try {
+      final Object apps =
+      await _methodChannel.invokeMethod('getWorkProfileInstalledApps', <String, bool>{
         'system_apps': includeSystemApps,
         'include_app_icons': includeAppIcons,
         'only_apps_with_launch_intent': onlyAppsWithLaunchIntent
@@ -105,16 +143,6 @@ class DeviceApps {
         )
         .then((bool? value) => value ?? false)
         .catchError((dynamic err) => false);
-  }
-
-  /// Returns the ID of the work profile
-  static Future<int> getWorkProfileId() {
-    return _methodChannel
-        .invokeMethod<int>(
-          'getWorkProfileId',
-        )
-        .then((int? value) => value ?? -1)
-        .catchError((dynamic err) => -1);
   }
 
   /// Launch an app based on its [packageName]
