@@ -14,6 +14,11 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
+import android.content.pm.LauncherApps;
+import android.content.pm.LauncherActivityInfo;
+import android.os.UserHandle;
+import android.os.UserManager;
+
 
 import androidx.annotation.NonNull;
 
@@ -115,9 +120,17 @@ public class DeviceAppsPlugin implements
             case "openApp":
                 if (!call.hasArgument("package_name") || TextUtils.isEmpty(call.argument("package_name").toString())) {
                     result.error("ERROR", "Empty or null package name", null);
+                } else if (!call.hasArgument("profile")) {
+                    result.error("ERROR", "Profile not specified", null);
                 } else {
                     String packageName = call.argument("package_name").toString();
-                    result.success(openApp(packageName));
+                    // Assuming the profile is passed as a String or some identifiable format
+                    int profileId = call.argument("profile");
+
+                    // Convert the profileId to UserHandle (the specific implementation depends on how you're handling UserHandle ids)
+                    UserHandle profile = getUserHandleForId(profileId);
+
+                    result.success(openApp(packageName, profile));
                 }
                 break;
             case "openAppSettings":
@@ -135,6 +148,9 @@ public class DeviceAppsPlugin implements
                     String packageName = call.argument("package_name").toString();
                     result.success(uninstallApp(packageName));
                 }
+                break;
+            case "getWorkProfileId":
+                result.success(getWorkProfileId());
                 break;
             default:
                 result.notImplemented();
@@ -162,43 +178,100 @@ public class DeviceAppsPlugin implements
             return new ArrayList<>(0);
         }
 
-        PackageManager packageManager = context.getPackageManager();
-        List<PackageInfo> apps = packageManager.getInstalledPackages(0);
-        List<Map<String, Object>> installedApps = new ArrayList<>(apps.size());
+        LauncherApps launcherApps = (LauncherApps) context.getSystemService(Context.LAUNCHER_APPS_SERVICE);
+        List<UserHandle> profiles = launcherApps.getProfiles();
+        List<LauncherActivityInfo> personalApps = new ArrayList<>();
+        List<LauncherActivityInfo> workApps = new ArrayList<>();
+        List<LauncherActivityInfo> allApps = new ArrayList<>();
+        UserHandle workProfileId = null;
+        UserHandle nonWorkProfileId = null;
 
-        for (PackageInfo packageInfo : apps) {
-            if (!includeSystemApps && isSystemApp(packageInfo)) {
+        if (!profiles.isEmpty()) {
+            nonWorkProfileId = profiles.get(0); // Assign the first profile to nonWorkProfileId
+
+            if (profiles.size() > 1) {
+                workProfileId = profiles.get(1); // Assign the second profile to workProfileId
+            }
+        }
+
+
+        for (UserHandle profile : profiles) {
+            List<LauncherActivityInfo> activities = launcherApps.getActivityList(null, profile);
+
+            // Check if the profile is a work profile
+            boolean isWorkProfile = hasManagedProfile();
+
+            if (profile == workProfileId) {
+                workApps.addAll(activities);
+            } else {
+                personalApps.addAll(activities);
+            }
+        }
+
+        allApps.addAll(personalApps);
+        allApps.addAll(workApps);
+        List<Map<String, Object>> installedWorkApps = new ArrayList<>();
+        List<Map<String, Object>> installedApps = new ArrayList<>();
+        List<Map<String, Object>> installedAllApps = new ArrayList<>();
+
+
+
+        for (LauncherActivityInfo activityInfo : workApps) {
+            ApplicationInfo appInfo = activityInfo.getApplicationInfo();
+
+            if (!includeSystemApps && isSystemApp(appInfo)) {
                 continue;
             }
-            if (onlyAppsWithLaunchIntent && packageManager.getLaunchIntentForPackage(packageInfo.packageName) == null) {
+            if (onlyAppsWithLaunchIntent && launcherApps.getLaunchIntentForPackage(appInfo.packageName, workProfileId) == null) {
                 continue;
             }
 
-            Map<String, Object> map = getAppData(packageManager,
-                    packageInfo,
-                    packageInfo.applicationInfo,
-                    includeAppIcons);
+            Map<String, Object> map = getAppData(launcherApps,
+                    activityInfo,
+                    appInfo,
+                    includeAppIcons, workProfileId.hashCode());
+            installedWorkApps.add(map);
+        }
+
+        for (LauncherActivityInfo activityInfo : personalApps) {
+            ApplicationInfo appInfo = activityInfo.getApplicationInfo();
+            if (!includeSystemApps && isSystemApp(appInfo)) {
+                continue;
+            }
+            if (onlyAppsWithLaunchIntent && launcherApps.getLaunchIntentForPackage(appInfo.packageName, nonWorkProfileId) == null) {
+                continue;
+            }
+
+            Map<String, Object> map = getAppData(launcherApps,
+                    activityInfo,
+                    appInfo,
+                    includeAppIcons, nonWorkProfileId.hashCode());
             installedApps.add(map);
         }
-
-        return installedApps;
+        installedAllApps.addAll(installedWorkApps);
+        installedAllApps.addAll(installedApps);
+        return installedAllApps;
     }
 
-    private boolean openApp(@NonNull String packageName) {
-        if (!isAppInstalled(packageName)) {
-            Log.w(LOG_TAG, "Application with package name \"" + packageName + "\" is not installed on this device");
+        private boolean openApp(@NonNull String packageName, @NonNull UserHandle profile) {
+            LauncherApps launcherApps = (LauncherApps) context.getSystemService(Context.LAUNCHER_APPS_SERVICE);
+
+            // Check if the app is available under the given profile
+            List<LauncherActivityInfo> activities = launcherApps.getActivityList(packageName, profile);
+            for (LauncherActivityInfo activity : activities) {
+                // Check if the activity is launchable
+                if (activity.getApplicationInfo().packageName.equals(packageName)) {
+                    Intent launchIntent = launcherApps.getLaunchIntentForPackage(packageName, profile);
+                    if (launchIntent != null && IntentUtils.isIntentOpenable(launchIntent, context)) {
+                        context.startActivity(launchIntent);
+                        return true;
+                    }
+                }
+            }
+
+            Log.w(LOG_TAG, "Application with package name \"" + packageName + "\" is not installed on this device or profile");
             return false;
         }
-
-        Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(packageName);
-
-        if (IntentUtils.isIntentOpenable(launchIntent, context)) {
-            context.startActivity(launchIntent);
-            return true;
-        }
-
-        return false;
-    }
 
     private boolean openAppSettings(@NonNull String packageName) {
         if (!isAppInstalled(packageName)) {
@@ -218,60 +291,73 @@ public class DeviceAppsPlugin implements
         return false;
     }
 
-    private boolean isSystemApp(PackageInfo pInfo) {
-        return (pInfo.applicationInfo.flags & SYSTEM_APP_MASK) != 0;
+    private boolean isSystemApp(ApplicationInfo activityInfo) {
+        if (activityInfo == null) {
+            return false;
+        }
+        return (appInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
     }
 
     private boolean isAppInstalled(@NonNull String packageName) {
-        try {
-            context.getPackageManager().getPackageInfo(packageName, 0);
-            return true;
-        } catch (PackageManager.NameNotFoundException ignored) {
-            return false;
+        LauncherApps launcherApps = (LauncherApps) context.getSystemService(Context.LAUNCHER_APPS_SERVICE);
+        List<UserHandle> profiles = launcherApps.getProfiles();
+
+        for (UserHandle profile : profiles) {
+            List<LauncherActivityInfo> activities = launcherApps.getActivityList(packageName, profile);
+            if (!activities.isEmpty()) {
+                // Found launcher activities for this package, so the app is installed
+                return true;
+            }
         }
+
+        // No launcher activities found, app is not installed
+        return false;
     }
 
     private Map<String, Object> getApp(String packageName, boolean includeAppIcon) {
-        try {
-            PackageManager packageManager = context.getPackageManager();
-            PackageInfo packageInfo = packageManager.getPackageInfo(packageName, 0);
+        LauncherApps launcherApps = (LauncherApps) context.getSystemService(Context.LAUNCHER_APPS_SERVICE);
 
-            return getAppData(packageManager,
-                    packageInfo,
-                    packageInfo.applicationInfo,
-                    includeAppIcon);
-        } catch (PackageManager.NameNotFoundException ignored) {
+        List<LauncherActivityInfo> activities = launcherApps.getActivityList(packageName);
+        if (activities.isEmpty()) {
+            // No activities found for the package in the given profile, return null
             return null;
         }
+
+        // Assuming the first activity info is what we need
+        LauncherActivityInfo activityInfo = activities.get(0);
+
+        return getAppData(launcherApps,
+                activityInfo,
+                activityInfo.getApplicationInfo(),
+                includeAppIcon);
     }
 
-    private Map<String, Object> getAppData(PackageManager packageManager,
-                                           PackageInfo pInfo,
+    private Map<String, Object> getAppData(LauncherApps launcherApps,
+                                           LauncherActivityInfo activityInfo,
                                            ApplicationInfo applicationInfo,
-                                           boolean includeAppIcon) {
+                                           boolean includeAppIcon,
+                                           int profileId) {
         Map<String, Object> map = new HashMap<>();
-        map.put(AppDataConstants.APP_NAME, pInfo.applicationInfo.loadLabel(packageManager).toString());
+        map.put(AppDataConstants.APP_NAME, activityInfo.getLabel().toString());
         map.put(AppDataConstants.APK_FILE_PATH, applicationInfo.sourceDir);
-        map.put(AppDataConstants.PACKAGE_NAME, pInfo.packageName);
-        map.put(AppDataConstants.VERSION_CODE, pInfo.versionCode);
-        map.put(AppDataConstants.VERSION_NAME, pInfo.versionName);
+        map.put(AppDataConstants.PACKAGE_NAME, activityInfo.packageName);
+        map.put(AppDataConstants.VERSION_CODE, applicationInfo.versionCode);
+        map.put(AppDataConstants.VERSION_NAME, applicationInfo.versionName);
         map.put(AppDataConstants.DATA_DIR, applicationInfo.dataDir);
-        map.put(AppDataConstants.SYSTEM_APP, isSystemApp(pInfo));
-        map.put(AppDataConstants.INSTALL_TIME, pInfo.firstInstallTime);
-        map.put(AppDataConstants.UPDATE_TIME, pInfo.lastUpdateTime);
+        map.put(AppDataConstants.SYSTEM_APP, isSystemApp(applicationInfo));
+        map.put(AppDataConstants.INSTALL_TIME, applicationInfo.firstInstallTime);
+        map.put(AppDataConstants.UPDATE_TIME, applicationInfo.lastUpdateTime);
         map.put(AppDataConstants.IS_ENABLED, applicationInfo.enabled);
+        map.put(AppDataConstants.PROFILE_ID, profileId);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            map.put(AppDataConstants.CATEGORY, pInfo.applicationInfo.category);
+            map.put(AppDataConstants.CATEGORY, applicationInfo.category);
         }
 
         if (includeAppIcon) {
-            try {
-                Drawable icon = packageManager.getApplicationIcon(pInfo.packageName);
-                String encodedImage = encodeToBase64(getBitmapFromDrawable(icon), Bitmap.CompressFormat.PNG, 100);
-                map.put(AppDataConstants.APP_ICON, encodedImage);
-            } catch (PackageManager.NameNotFoundException ignored) {
-            }
+            Drawable icon = activityInfo.getBadgedIcon(0);
+            String encodedImage = encodeToBase64(getBitmapFromDrawable(icon), Bitmap.CompressFormat.PNG, 100);
+            map.put(AppDataConstants.APP_ICON, encodedImage);
         }
 
         return map;
@@ -293,6 +379,43 @@ public class DeviceAppsPlugin implements
         }
 
         return false;
+    }
+
+    private UserHandle getUserHandleForId(int profileId) {
+        UserManager userManager = (UserManager) context.getSystemService(Context.USER_SERVICE);
+        List<UserHandle> profiles = userManager.getUserProfiles();
+
+        for (UserHandle profile : profiles) {
+            int id = generateIdForUserHandle(profile); // This method needs to be defined
+            if (id == profileId) {
+                return profile;
+            }
+        }
+
+        return null; // Return null if no matching profile is found
+    }
+
+    private int generateIdForUserHandle(UserHandle userHandle) {
+        // Implement this method to generate a consistent integer ID for a UserHandle
+        // The implementation will depend on your app's logic and requirements
+        // One potential way (with limitations) could be using UserHandle.hashCode()
+        return userHandle.hashCode();
+    }
+
+    private int getWorkProfileId() {
+        LauncherApps launcherApps = (LauncherApps) context.getSystemService(Context.LAUNCHER_APPS_SERVICE);
+        List<UserHandle> profiles = launcherApps.getProfiles();
+        for (UserHandle profile : profiles) {
+            if (UserManager.get(context).isManagedProfile(profile)) {
+                return generateIdForUserHandle(profile);
+            }
+        }
+        return -1;
+    }
+
+    private boolean hasManagedProfile() {
+        UserManager userManager = (UserManager) context.getSystemService(Context.USER_SERVICE);
+        return userManager.isManagedProfile();
     }
 
     @Override

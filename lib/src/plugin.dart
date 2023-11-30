@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -106,6 +105,16 @@ class DeviceApps {
         )
         .then((bool? value) => value ?? false)
         .catchError((dynamic err) => false);
+  }
+
+  /// Returns the ID of the work profile
+  static Future<int> getWorkProfileId() {
+    return _methodChannel
+        .invokeMethod<int>(
+          'getWorkProfileId',
+        )
+        .then((int? value) => value ?? -1)
+        .catchError((dynamic err) => -1);
   }
 
   /// Launch an app based on its [packageName]
