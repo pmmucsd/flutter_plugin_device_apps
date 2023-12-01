@@ -2,6 +2,8 @@ import 'package:device_apps/device_apps.dart';
 import 'package:flutter/material.dart';
 
 class AppsListScreen extends StatefulWidget {
+  final bool showWorkApps;
+  const AppsListScreen(this.showWorkApps, {Key? key}) : super(key: key);
   @override
   _AppsListScreenState createState() => _AppsListScreenState();
 }
@@ -9,6 +11,8 @@ class AppsListScreen extends StatefulWidget {
 class _AppsListScreenState extends State<AppsListScreen> {
   bool _showSystemApps = false;
   bool _onlyLaunchableApps = false;
+
+  bool get showWorkApps => widget.showWorkApps;
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +49,7 @@ class _AppsListScreenState extends State<AppsListScreen> {
       body: _AppsListScreenContent(
           includeSystemApps: _showSystemApps,
           onlyAppsWithLaunchIntent: _onlyLaunchableApps,
+          showWorkApps: showWorkApps,
           key: GlobalKey()),
     );
   }
@@ -54,19 +59,26 @@ class _AppsListScreenContent extends StatelessWidget {
   final bool includeSystemApps;
   final bool onlyAppsWithLaunchIntent;
 
+  final bool showWorkApps;
   const _AppsListScreenContent(
       {Key? key,
-      this.includeSystemApps: false,
-      this.onlyAppsWithLaunchIntent: false})
+      this.includeSystemApps = false,
+      this.onlyAppsWithLaunchIntent = false,
+      this.showWorkApps = false})
       : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<Application>>(
-      future: DeviceApps.getWorkProfileInstalledApps(
-          includeAppIcons: true,
-          includeSystemApps: includeSystemApps,
-          onlyAppsWithLaunchIntent: onlyAppsWithLaunchIntent),
+      future: showWorkApps
+          ? DeviceApps.getWorkProfileInstalledApps(
+              includeAppIcons: true,
+              includeSystemApps: includeSystemApps,
+              onlyAppsWithLaunchIntent: onlyAppsWithLaunchIntent)
+          : DeviceApps.getMainProfileInstalledApps(
+              includeAppIcons: true,
+              includeSystemApps: includeSystemApps,
+              onlyAppsWithLaunchIntent: onlyAppsWithLaunchIntent),
       builder: (BuildContext context, AsyncSnapshot<List<Application>> data) {
         if (data.data == null) {
           return const Center(child: CircularProgressIndicator());
@@ -80,21 +92,21 @@ class _AppsListScreenContent extends StatelessWidget {
                   return Column(
                     children: <Widget>[
                       ListTile(
-                        leading: app is ApplicationWithIcon
-                            ? CircleAvatar(
-                                backgroundImage: MemoryImage(app.icon),
-                                backgroundColor: Colors.white,
-                              )
-                            : null,
-                        onTap: () => onAppClicked(context, app),
-                        title: Text('${app.appName} (${app.packageName})'),
-                        subtitle: Text('Version: ${app.versionName}\n'
-                            'System app: ${app.systemApp}\n'
-                            'APK file path: ${app.apkFilePath}\n'
-                            'Data dir: ${app.dataDir}\n'
-                            'Installed: ${DateTime.fromMillisecondsSinceEpoch(app.installTimeMillis).toString()}\n'
-                            'Updated: ${DateTime.fromMillisecondsSinceEpoch(app.updateTimeMillis).toString()}'),
-                      ),
+                          leading: app is ApplicationWithIcon
+                              ? CircleAvatar(
+                                  backgroundImage: MemoryImage(app.icon),
+                                  backgroundColor: Colors.white,
+                                )
+                              : null,
+                          onTap: () => onAppClicked(context, app),
+                          title: Text('${app.appName} (${app.packageName})'),
+                          subtitle: Text('Version: ${app.versionName}\n'
+                              'System app: ${app.systemApp}\n'
+                              'APK file path: ${app.apkFilePath}\n'
+                              'Data dir: ${app.dataDir}\n'
+                              'Installed: ${DateTime.fromMillisecondsSinceEpoch(app.installTimeMillis).toString()}\n'
+                              'Updated: ${DateTime.fromMillisecondsSinceEpoch(app.updateTimeMillis).toString()})\n'
+                              'For Work Profile: ${app.forWorkProfile}\n')),
                       const Divider(
                         height: 1.0,
                       )

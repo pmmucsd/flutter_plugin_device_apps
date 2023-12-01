@@ -20,10 +20,21 @@ class ExampleApp extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute<Object>(
-                        builder: (BuildContext context) => AppsListScreen()),
+                        builder: (BuildContext context) =>
+                            AppsListScreen(false)),
                   );
                 },
                 child: Text('Applications list')),
+            TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute<Object>(
+                        builder: (BuildContext context) =>
+                            AppsListScreen(true)),
+                  );
+                },
+                child: Text('Work Applications list')),
             TextButton(
                 onPressed: () {
                   Navigator.push(

@@ -111,6 +111,7 @@ public class DeviceAppsPlugin implements
                         new Handler(Looper.getMainLooper()).post(new Runnable() {
                             @Override
                             public void run() {
+
                                 result.success(apps);
                             }
                         });
@@ -137,17 +138,11 @@ public class DeviceAppsPlugin implements
             case "openApp":
                 if (!call.hasArgument("package_name") || TextUtils.isEmpty(call.argument("package_name").toString())) {
                     result.error("ERROR", "Empty or null package name", null);
-                } else if (!call.hasArgument("profile")) {
-                    result.error("ERROR", "Profile not specified", null);
                 } else {
                     String packageName = call.argument("package_name").toString();
+                    boolean forWorkProfile = call.hasArgument("for_work_profile") && (Boolean) (call.argument("for_work_profile"));
                     // Assuming the profile is passed as a String or some identifiable format
-                    int profileId = call.argument("profile");
-
-                    // Convert the profileId to UserHandle (the specific implementation depends on how you're handling UserHandle ids)
-                    UserHandle profile = getUserHandleForId(profileId);
-
-                    result.success(openApp(packageName, profile));
+                    result.success(openApp(packageName, forWorkProfile));
                 }
                 break;
             case "openAppSettings":
@@ -217,12 +212,15 @@ public class DeviceAppsPlugin implements
              // Assign the first profile to nonWorkProfileId
             if (profiles.size() > 1) {
                 workProfileId = profiles.get(1);
+                System.out.println(workProfileId.toString());
+                System.out.println(workProfileId.toString());
             }
         }
 
         if(workProfileId != null) {
             List<LauncherActivityInfo> activities = launcherApps.getActivityList(null, workProfileId);
             workApps.addAll(activities);
+            System.out.println("workApps length: " + workApps.size());
             for (LauncherActivityInfo activityInfo : workApps) {
                 ApplicationInfo appInfo = activityInfo.getApplicationInfo();
 
@@ -233,7 +231,7 @@ public class DeviceAppsPlugin implements
                 Map<String, Object> map = getAppData(launcherApps,
                         activityInfo,
                         appInfo,
-                        includeAppIcons, workProfileId.hashCode());
+                        includeAppIcons, true);
                 installedWorkApps.add(map);
             }
         }
@@ -271,18 +269,28 @@ public class DeviceAppsPlugin implements
                 Map<String, Object> map = getAppData(launcherApps,
                         activityInfo,
                         appInfo,
-                        includeAppIcons, mainProfileId.hashCode());
+                        includeAppIcons, false);
                 installedApps.add(map);
             }
         }
         return installedApps;
     }
 
-    private boolean openApp(@NonNull String packageName, @NonNull UserHandle profile) {
+    private boolean openApp(@NonNull String packageName, @NonNull boolean forWorkProfile) {
         LauncherApps launcherApps = (LauncherApps) context.getSystemService(Context.LAUNCHER_APPS_SERVICE);
-
+        List<UserHandle> profiles = launcherApps.getProfiles();
+        UserHandle mainProfileId = null;
+        if (!profiles.isEmpty()) {
+            if(!forWorkProfile) {
+                mainProfileId = profiles.get(0);
+            } else {
+                mainProfileId = profiles.get(1);
+            }
+            System.out.println(mainProfileId.toString());
+            // Assign the first profile to nonWorkProfileId
+        }
         // Check if the app is available under the given profile
-        List<LauncherActivityInfo> activities = launcherApps.getActivityList(packageName, profile);
+        List<LauncherActivityInfo> activities = launcherApps.getActivityList(packageName, mainProfileId);
         for (LauncherActivityInfo activity : activities) {
             // Check if the activity is launchable
             if (activity.getApplicationInfo().packageName.equals(packageName)) {
@@ -290,7 +298,7 @@ public class DeviceAppsPlugin implements
 
                 // Starting the main activity of the app
                 try {
-                    launcherApps.startMainActivity(componentName, profile, null, null);
+                    launcherApps.startMainActivity(componentName, mainProfileId, null, null);
                     return true;
                 } catch (SecurityException e) {
                     Log.w(LOG_TAG, "Failed to start app due to security exception", e);
@@ -361,14 +369,14 @@ public class DeviceAppsPlugin implements
         return getAppData(launcherApps,
                 activityInfo,
                 activityInfo.getApplicationInfo(),
-                includeAppIcon, profiles.get(0).hashCode());
+                includeAppIcon, false);
     }
 
     private Map<String, Object> getAppData(LauncherApps launcherApps,
                                            LauncherActivityInfo activityInfo,
                                            ApplicationInfo applicationInfo,
                                            boolean includeAppIcon,
-                                           int profileId) {
+                                           boolean forWorkProfile) {
         Map<String, Object> map = new HashMap<>();
         map.put(AppDataConstants.APP_NAME, activityInfo.getLabel().toString());
         map.put(AppDataConstants.APK_FILE_PATH, applicationInfo.sourceDir);
@@ -380,7 +388,7 @@ public class DeviceAppsPlugin implements
         map.put(AppDataConstants.INSTALL_TIME, 0);
         map.put(AppDataConstants.UPDATE_TIME, 0);
         map.put(AppDataConstants.IS_ENABLED, applicationInfo.enabled);
-        map.put(AppDataConstants.PROFILE_ID, profileId);
+        map.put(AppDataConstants.FOR_WORK_PROFILE, forWorkProfile);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             map.put(AppDataConstants.CATEGORY, applicationInfo.category);

@@ -29,8 +29,8 @@ class DeviceApps {
     bool onlyAppsWithLaunchIntent: false,
   }) async {
     try {
-      final Object apps =
-          await _methodChannel.invokeMethod('getMainProfileInstalledApps', <String, bool>{
+      final Object apps = await _methodChannel
+          .invokeMethod('getMainProfileInstalledApps', <String, bool>{
         'system_apps': includeSystemApps,
         'include_app_icons': includeAppIcons,
         'only_apps_with_launch_intent': onlyAppsWithLaunchIntent
@@ -67,8 +67,8 @@ class DeviceApps {
     bool onlyAppsWithLaunchIntent: false,
   }) async {
     try {
-      final Object apps =
-      await _methodChannel.invokeMethod('getWorkProfileInstalledApps', <String, bool>{
+      final Object apps = await _methodChannel
+          .invokeMethod('getWorkProfileInstalledApps', <String, bool>{
         'system_apps': includeSystemApps,
         'include_app_icons': includeAppIcons,
         'only_apps_with_launch_intent': onlyAppsWithLaunchIntent
@@ -149,7 +149,7 @@ class DeviceApps {
   /// You will then receive in return if the app was opened
   /// (will be false if the app is not installed, or if no "launcher" intent is
   /// provided by this app)
-  static Future<bool> openApp(String packageName) {
+  static Future<bool> openApp(String packageName, bool forWorkProfile) {
     if (packageName.isEmpty) {
       throw Exception('The package name can not be empty');
     }
@@ -157,8 +157,9 @@ class DeviceApps {
     return _methodChannel
         .invokeMethod<bool>(
           'openApp',
-          <String, String>{
+          <String, Object>{
             'package_name': packageName,
+            'for_work_profile': forWorkProfile
           },
         )
         .then((bool? value) => value ?? false)
@@ -256,6 +257,8 @@ class Application extends _BaseApplication {
   /// or disabled (installed, but not visible)
   final bool enabled;
 
+  final bool forWorkProfile;
+
   factory Application._(Map<dynamic, dynamic> map) {
     if (map.length == 0) {
       throw Exception('The map can not be null!');
@@ -278,6 +281,7 @@ class Application extends _BaseApplication {
         updateTimeMillis = map['update_time'] as int,
         enabled = map['is_enabled'] as bool,
         category = _parseCategory(map['category']),
+        forWorkProfile = map['for_work_profile'] as bool,
         super._fromMap(map);
 
   /// Mapping of Android categories
@@ -311,7 +315,7 @@ class Application extends _BaseApplication {
   // Will return [true] is the app is installed and the screen visible
   // Will return [false] otherwise
   Future<bool> openApp() {
-    return DeviceApps.openApp(packageName);
+    return DeviceApps.openApp(packageName, forWorkProfile);
   }
 
   // Open the app settings screen
@@ -342,6 +346,7 @@ class Application extends _BaseApplication {
         'updateTimeMillis: $updateTimeMillis, '
         'category: $category, '
         'enabled: $enabled'
+        'forWorkProfile: $forWorkProfile'
         '}';
   }
 
@@ -360,6 +365,7 @@ class Application extends _BaseApplication {
           installTimeMillis == other.installTimeMillis &&
           updateTimeMillis == other.updateTimeMillis &&
           category == other.category &&
+          forWorkProfile == other.forWorkProfile &&
           enabled == other.enabled;
 
   @override
@@ -374,6 +380,7 @@ class Application extends _BaseApplication {
       installTimeMillis.hashCode ^
       updateTimeMillis.hashCode ^
       category.hashCode ^
+      forWorkProfile.hashCode ^
       enabled.hashCode;
 }
 
