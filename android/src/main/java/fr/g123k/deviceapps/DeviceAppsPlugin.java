@@ -216,7 +216,7 @@ public class DeviceAppsPlugin implements
         if (!profiles.isEmpty()) {
              // Assign the first profile to nonWorkProfileId
             if (profiles.size() > 1) {
-                workProfileId = profiles.get(1); // Assign the second profile to workProfileId
+                workProfileId = profiles.get(1);
             }
         }
 
@@ -254,6 +254,7 @@ public class DeviceAppsPlugin implements
 
         if (!profiles.isEmpty()) {
             mainProfileId = profiles.get(0);
+            System.out.println(mainProfileId.toString());
             // Assign the first profile to nonWorkProfileId
         }
 

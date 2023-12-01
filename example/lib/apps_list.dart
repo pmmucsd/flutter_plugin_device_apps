@@ -63,7 +63,7 @@ class _AppsListScreenContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<Application>>(
-      future: DeviceApps.getMainProfileInstalledApps(
+      future: DeviceApps.getWorkProfileInstalledApps(
           includeAppIcons: true,
           includeSystemApps: includeSystemApps,
           onlyAppsWithLaunchIntent: onlyAppsWithLaunchIntent),
